@@ -1,0 +1,133 @@
+
+  ETHANOL CONTENT ANALYZER - IN-CAR TAP WIRING DIAGRAM
+  =====================================================
+
+  Tapping into an existing Flex Fuel sensor already installed in the vehicle.
+  The ECU keeps its original connection — the ESP32 eavesdrops on the signal.
+
+
+  VEHICLE WIRING (tap into the sensor connector)
+  ================================================
+
+  FLEX FUEL SENSOR                              ECU
+  +------------------+                     +-----------+
+  | Pin 1: 12V Power |--+---> 12V IGN      |           |
+  | Pin 2: Ground    |--+---> Chassis GND  |           |
+  | Pin 3: Signal    |==+==================|  Signal   |
+  +------------------+  ||  |              |  Input    |
+                        ||  |              +-----------+
+                        ||  |
+                  TAP ALL 3 PINS
+                   (T-splice x3)
+                        ||  |
+                        ||  |
+  NEW WIRING            ||  |
+  ======================||==|====================================
+                        ||  |
+   SIGNAL TAP           ||  |    VOLTAGE DIVIDER (5V -> 3.3V)
+                        ||  |
+                        ||  +---[R1 10kOhm]---+----> ESP32-C3 GPIO4
+                        ||                     |
+                        ||                    [R2 20kOhm]
+                        ||                     |
+                        ||                    GND
+                        ||
+   POWER SUPPLY         ||       DC-DC BUCK CONVERTER (12V -> 5V)
+                        ||
+     (from sensor       ||    +---------------------+
+      pin 1: 12V) ------+---->| VIN+           VOUT+ |----> ESP32-C3 5V pin
+                         |    |                      |
+     (from sensor        +---->| VIN-           VOUT- |----> ESP32-C3 GND pin
+      pin 2: GND) ------+    +---------------------+
+                         |     (e.g. Mini-360, MP1584,
+                         |      or similar 12V->5V module)
+                         |
+                         +---> Common GND (divider + DC-DC + ESP32)
+
+
+  ESP32-C3 SUPER MINI
+  +-----------------------------+
+  |          USB-C              |
+  |       +--------+            |
+  |  5V <===== DC-DC VOUT+     |  (power from sensor pin 1 via DC-DC)
+  |  GND <==== DC-DC VOUT-     |  (ground from sensor pin 2 via DC-DC)
+  |  3V3 -|        |- GPIO10   |
+  |  GP4 -|  C3    |- GPIO9    |
+  |  GP5 -|        |- GPIO8    |
+  |  GP6 -|        |- GPIO7    |
+  |  GP7 -|        |- GPIO6    |
+  |  GP0 -|        |- GPIO5    |
+  |  GP1 -|        |- GPIO4 <====== Signal (from sensor pin 3 via divider)
+  |       +--------+            |
+  +-----------------------------+
+
+
+  FULL SCHEMATIC VIEW
+  ===================
+
+                           EXISTING (vehicle)
+     ...................................................................
+     :                                                                 :
+     :  FLEX FUEL SENSOR              signal wire             ECU      :
+     :  +------------+                                  +-----------+  :
+     :  | 12V  (pin1)|----> 12V IGN                     |           |  :
+     :  | GND  (pin2)|----> Chassis GND                 |           |  :
+     :  | SIG  (pin3)|==================================|  Sig In   |  :
+     :  +------------+                                  +-----------+  :
+     :       |  |  |                                                   :
+     ....... | .| .| ..................................................
+             |  |  |
+        TAP ALL 3 PINS (T-splice)
+             |  |  |
+     ........|..|..|...................................................
+     :       |  |  |                                                  :
+     :       |  |  +---[R1 10kOhm]---+                                :
+     :       |  |                    |                                :
+     :       |  |                   [R2 20kOhm]                       :
+     :       |  |                    |                                :
+     :       |  +-------- GND -------+                                :
+     :       |  |                                                     :
+     :       |  |         +-- GPIO4 -+  (from divider)                :
+     :       |  |         |                                           :
+     :       |  |   +-----+------+                                    :
+     :       |  |   |  ESP32-C3  |                                    :
+     :       |  |   |  Super     |                                    :
+     :       |  +---| GND   Mini |                                    :
+     :       |      | 5V         |                                    :
+     :       |      +-----+------+                                    :
+     :       |            |                                           :
+     :       |  +---------+                                           :
+     :       |  |                                                     :
+     :       +------>| VIN+   DC-DC   VOUT+ |----> ESP32 5V           :
+     :          +--->| VIN-  CONVERTER VOUT-|----> ESP32 GND          :
+     :                                                                :
+     :   12V from sensor pin 1         5V to ESP32 5V pin             :
+     :   GND from sensor pin 2         GND to ESP32 GND pin           :
+     :                                                                :
+     ..................................................................
+
+
+  PARTS LIST (for car tap installation)
+  ======================================
+  1x  ESP32-C3 Super Mini
+  1x  DC-DC Buck Converter module (12V to 5V, e.g. Mini-360 or MP1584)
+  1x  R1 - 10kOhm resistor
+  1x  R2 - 20kOhm resistor
+  3x  T-splice / scotch lock / solder tap (12V, GND, signal)
+  --  Wire, heat shrink, connectors as needed
+
+
+  IMPORTANT NOTES
+  ===============
+  - Do NOT cut the existing signal wire. Tap alongside it so the ECU
+    still receives the sensor signal uninterrupted.
+  - The sensor's 12V line is already ignition-switched, so the ESP32
+    will power on/off with the car automatically.
+  - Keep all grounds common (vehicle chassis, sensor, DC-DC, ESP32).
+  - Keep wires between the tap and voltage divider short to reduce
+    noise pickup in the engine bay.
+  - The voltage divider (10k + 20k = 30kOhm) draws ~0.17 mA from the
+    signal line — negligible and won't affect the ECU reading.
+  - Optionally add a 100nF ceramic capacitor between GPIO4 and GND
+    close to the ESP32 for extra noise filtering.
+

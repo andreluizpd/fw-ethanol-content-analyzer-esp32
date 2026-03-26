@@ -5,6 +5,8 @@ float ethanol = 0.f;
 float fuelTemperature = 0.f;
 bool canReady = false;
 uint32_t lastSensorUpdateMs = 0;
+SensorState sensorState = SENSOR_INITIALIZING;
+uint8_t stablePulseCount = 0;
 
 // CAN timing
 uint32_t lastCANSend = 0;
@@ -32,18 +34,71 @@ void setup()
   // Initialize TWAI (CAN) peripheral
   initCAN();
 
+  // Initialize software watchdog (auto-resets ESP32 if main loop freezes)
+  esp_task_wdt_init(WDT_TIMEOUT_S, true);
+  esp_task_wdt_add(NULL);
+
   Serial.println("Ethanol Content Analyzer - ESP32-C3");
   Serial.println("Waiting for sensor data...");
 }
 
 void loop()
 {
-  // get ethanol content from sensor frequency
+  // Feed the watchdog to prove the main loop is alive
+  esp_task_wdt_reset();
+
+  // Check for sensor timeout
+  uint32_t now = millis();
+  if (lastSensorUpdateMs > 0 && (now - lastSensorUpdateMs >= SENSOR_TIMEOUT_MS)) {
+    if (sensorState != SENSOR_TIMEOUT) {
+      sensorState = SENSOR_TIMEOUT;
+      Serial.println("FAULT: Sensor timeout - no data received");
+    }
+  }
+
+  // Process new sensor data
   if (newData && calculateFrequency()) {
-    frequencyToEthanolContent(frequency, frequencyScaler);
-    dutyCycleToFuelTemperature(dutyCycle);
     lastSensorUpdateMs = millis();
     newData = false;
+
+    // Validate signal before using it
+    SensorState validation = validateSignal(frequency, dutyCycle);
+
+    if (validation == SENSOR_OK) {
+      frequencyToEthanolContent(frequency, frequencyScaler);
+      dutyCycleToFuelTemperature(dutyCycle);
+
+      // Startup stabilization: count stable pulses before trusting data
+      if (sensorState == SENSOR_INITIALIZING) {
+        stablePulseCount++;
+        if (stablePulseCount >= STABLE_PULSES_REQUIRED) {
+          sensorState = SENSOR_OK;
+          Serial.println("Sensor: Stabilized - CAN output enabled");
+        }
+      } else {
+        sensorState = SENSOR_OK;
+      }
+    } else {
+      // Signal is invalid - apply safe defaults and log the fault
+      sensorState = validation;
+      ethanol = SAFE_ETHANOL_DEFAULT;
+      fuelTemperature = SAFE_TEMP_DEFAULT;
+      stablePulseCount = 0;
+
+      switch (validation) {
+        case SENSOR_UNDERRANGE:
+          Serial.printf("FAULT: Under-range frequency %.1f Hz - sensor failure/wiring\n", frequency);
+          break;
+        case SENSOR_CONTAMINATED:
+          Serial.printf("FAULT: Over-range frequency %.1f Hz - water contamination\n", frequency);
+          break;
+        case SENSOR_DUTY_INVALID:
+          Serial.printf("FAULT: Invalid duty cycle %.1f%% - sensor disconnected\n", dutyCycle);
+          break;
+        default:
+          break;
+      }
+    }
 
     Serial.print("Period (us): ");
     Serial.print(period);
@@ -58,14 +113,20 @@ void loop()
     Serial.print("%");
     Serial.print("\tFuel Temp: ");
     Serial.print(fuelTemperature, 1);
-    Serial.println(" C");
+    Serial.print(" C");
+    Serial.printf("\tState: %d\n", sensorState);
   }
 
   // Send CAN message at Zeitronix ECA-2 update rate (4 Hz)
-  uint32_t now = millis();
+  // Only send if CAN is ready AND sensor has stabilized (not initializing or timed out)
   if (canReady && (now - lastCANSend >= ZEITRONIX_CAN_INTERVAL_MS)) {
     lastCANSend = now;
-    sendZeitronixCANMessage();
+
+    if (sensorState == SENSOR_TIMEOUT || sensorState == SENSOR_INITIALIZING) {
+      // Cease broadcast — don't send stale/unvalidated data to the DME
+    } else {
+      sendZeitronixCANMessage();
+    }
   }
 }
 
@@ -123,6 +184,25 @@ bool calculateFrequency() {
     frequency = (1 - FREQUENCY_ALPHA) * frequency + FREQUENCY_ALPHA * tempFrequency;
 
   return true;
+}
+
+/**
+ * Validates the sensor signal against expected ranges.
+ * @param freq - Current frequency reading
+ * @param duty - Current duty cycle reading
+ * @return SensorState indicating the validation result
+ */
+SensorState validateSignal(float freq, float duty) {
+  if (freq < FREQ_UNDERRANGE_LIMIT)
+    return SENSOR_UNDERRANGE;
+
+  if (freq > FREQ_OVERRANGE_LIMIT)
+    return SENSOR_CONTAMINATED;
+
+  if (duty < DUTY_CYCLE_MIN || duty > DUTY_CYCLE_MAX)
+    return SENSOR_DUTY_INVALID;
+
+  return SENSOR_OK;
 }
 
 /**
@@ -202,9 +282,8 @@ void sendZeitronixCANMessage() {
   int tempRaw = (int)roundf(fuelTemperature) + 40;
   msg.data[1] = (uint8_t)constrain(tempRaw, 0, 255);
 
-  // Data[7]: Sensor status (FAULT if no updates for >1s)
-  bool sensorOk = (lastSensorUpdateMs > 0) && (millis() - lastSensorUpdateMs < SENSOR_TIMEOUT_MS);
-  msg.data[7] = sensorOk ? ZEITRONIX_SENSOR_OK : ZEITRONIX_SENSOR_FAULT;
+  // Data[7]: Sensor status from state machine
+  msg.data[7] = (sensorState == SENSOR_OK) ? ZEITRONIX_SENSOR_OK : ZEITRONIX_SENSOR_FAULT;
 
   esp_err_t result = twai_transmit(&msg, pdMS_TO_TICKS(10));
   if (result != ESP_OK) {

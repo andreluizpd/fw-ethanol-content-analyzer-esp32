@@ -37,6 +37,7 @@ void loop()
 
   // get ethanol content from sensor frequency
   if (newData && calculateFrequency()) {
+    lastValidReadingMs = millis();
     frequencyToEthanolContent(frequency, frequencyScaler);
 
     uint32_t capturedPulseWidth = pulseWidthUs;
@@ -76,7 +77,6 @@ void IRAM_ATTR onSensorEdge() {
     if (risingEdgeTime > 0) {
       period = now - risingEdgeTime;
       newData = true;
-      lastValidReadingMs = millis();
     }
     risingEdgeTime = now;
   } else {
@@ -142,10 +142,13 @@ void pulseWidthToFuelTemperature(uint32_t pw) {
                   / (float)(PULSE_WIDTH_HIGH_US - PULSE_WIDTH_LOW_US);
 
   // EMA filter for temperature (changes slowly)
-  if (fuelTemperature == 0.f && ethanol == 0.f)
+  static bool tempInitialized = false;
+  if (!tempInitialized) {
     fuelTemperature = rawTemp;
-  else
+    tempInitialized = true;
+  } else {
     fuelTemperature = (1 - TEMPERATURE_ALPHA) * fuelTemperature + TEMPERATURE_ALPHA * rawTemp;
+  }
 }
 
 /**

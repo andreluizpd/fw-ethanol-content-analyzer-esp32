@@ -60,9 +60,6 @@ void loop()
     Serial.println(" C");
   }
 
-  if (sensorTimedOut) {
-    Serial.println("WARNING: Flex fuel sensor timed out! Using fallback values.");
-  }
 }
 
 /**
@@ -162,6 +159,7 @@ void checkSensorTimeout() {
     if (!sensorTimedOut) {
       sensorTimedOut = true;
       ethanol = FALLBACK_ETHANOL;
+      Serial.println("WARNING: Flex fuel sensor timed out! Using fallback values.");
     }
   } else {
     sensorTimedOut = false;

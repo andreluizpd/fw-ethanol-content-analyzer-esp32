@@ -30,14 +30,74 @@
   |  GP4 -|  C3    |- GPIO9    |
   |  GP5 -|        |- GPIO8    |
   |  GP6 -|        |- GPIO7    |
-  |  GP7 -|        |- GPIO6    |
-  |  GP0 -|        |- GPIO5    |
+  |  GP7 -|        |- GPIO6  ----+-- CAN RX (from SN65HVD230 R)
+  |  GP0 -|        |- GPIO5  ----+-- CAN TX (to SN65HVD230 D)
   |  GP1 -|        |- GPIO4  <---+-- Sensor signal (via divider)
   |       +--------+            |
   +-----------------------------+
 
   Note: GPIO4 is on the right side of the board.
   Power the board via USB-C (for serial monitor) or 5V pin.
+
+
+  CAN BUS - SN65HVD230 MODULE
+  ===========================
+
+  ESP32-C3                SN65HVD230 Module              CAN Bus
+  --------                -----------------              -------
+  3V3 ------------------> 3V3
+  GND ------------------> GND
+  GPIO5 (TX) -----------> CTX
+  GPIO6 (RX) <----------- CRX
+                          CANH -----------------> CAN Bus High  ---+
+                          CANL -----------------> CAN Bus Low   ---+
+                                                 (to ECU / dash / logger)
+
+  +-------------------+
+  | SN65HVD230 Module |
+  |                   |
+  |  3V3  <--------------- ESP32 3V3
+  |  GND  <--------------- ESP32 GND
+  |  CTX  <--------------- ESP32 GPIO5
+  |  CRX  ---------------> ESP32 GPIO6
+  |  CANH ----------------> CAN Bus High
+  |  CANL ----------------> CAN Bus Low
+  |                   |
+  +-------------------+
+
+  Note: This module includes a 120Ω termination resistor (R2).
+  If your CAN bus already has termination at both ends, you may
+  need to remove R2 from the module.
+
+
+  VEHICLE CAN BUS TAP POINT - BMW G30 540i (B58)
+  ==============================================
+
+  Tap location: BDC (Body Domain Controller) - behind glove box
+  Connector:    A258*8B (extended equipment version)
+
+  +---------------------------------------------+
+  | A258*8B Connector                            |
+  |                                              |
+  |  Pin 47  -->  PT_CAN_L   0.35  GE/SW         |
+  |               (yellow/black)                 |
+  |                                              |
+  |  Pin 48  -->  PT_CAN_H   0.35  GE/WS         |
+  |               (yellow/white)                 |
+  +---------------------------------------------+
+
+  Wiring:
+    A258*8B Pin 48 (PT_CAN_H, yellow/white) ---twisted pair---> SN65HVD230 CANH
+    A258*8B Pin 47 (PT_CAN_L, yellow/black) ---twisted pair---> SN65HVD230 CANL
+
+  Cable: Unshielded twisted pair, 22 AWG (0.35mm²), ~4-5 meters
+         (CAT5e ethernet cable works - use one twisted pair)
+
+  Routing: BDC (behind glove box) -> under carpet along center
+           tunnel -> under rear seat -> trunk area
+
+  Note: Basic version uses pins 19 (PT_CAN_L) and 20 (PT_CAN_H)
+  on the same connector. Verify your variant before tapping.
 
 
   POWER SUPPLY
@@ -56,17 +116,33 @@
   ===================
   1x  ESP32-C3 Super Mini
   1x  Continental Flex Fuel Sensor (GM 13577429 or similar)
+  1x  SN65HVD230 CAN transceiver module (3.3V)
   1x  R1 - 10kΩ resistor (voltage divider)
   1x  R2 - 20kΩ resistor (voltage divider)
   1x  USB-C cable (for serial monitor + power)
   Optional: 5V voltage regulator if not using USB power
+  Optional: 120Ω resistor (CAN termination, if not on module)
 
 
   PIN SUMMARY
   ===========
   ESP32-C3 GPIO4  <-- Sensor signal (through 10k/20k voltage divider)
-  ESP32-C3 GND    --- Common ground with sensor and vehicle
+  ESP32-C3 GPIO5  --> CAN TX (to SN65HVD230 D pin)
+  ESP32-C3 GPIO6  <-- CAN RX (from SN65HVD230 R pin)
+  ESP32-C3 3V3    --> SN65HVD230 VCC
+  ESP32-C3 GND    --- Common ground (sensor, CAN transceiver, vehicle)
   ESP32-C3 5V     <-- Power input (USB or 5V regulator)
+
+
+  CAN BUS OUTPUT (Zeitronix ECA-2 Compatible)
+  ===========================================
+  CAN ID:       0x00EC (standard 11-bit)
+  Speed:        500 Kbps
+  Update rate:  250 ms (4 Hz)
+
+  Data[0] = Ethanol %       (0-100)
+  Data[1] = Fuel Temp       (raw byte - 40 = °C)
+  Data[7] = Sensor Status   (0x00 = OK, 0x01 = fault)
 
 
   SERIAL OUTPUT (115200 baud)

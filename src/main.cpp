@@ -3,6 +3,13 @@
 // State variables
 float ethanol = 0.f;
 float fuelTemperature = 0.f;
+bool canReady = false;
+uint32_t lastSensorUpdateMs = 0;
+SensorState sensorState = SENSOR_INITIALIZING;
+uint8_t stablePulseCount = 0;
+
+// CAN timing
+uint32_t lastCANSend = 0;
 
 // Frequency and duty cycle readings
 float frequency = 0.f, dutyCycle = 0.f;
@@ -24,17 +31,74 @@ void setup()
   pinMode(ECA_INPUT, INPUT);
   attachInterrupt(digitalPinToInterrupt(ECA_INPUT), onSensorEdge, CHANGE);
 
+  // Initialize TWAI (CAN) peripheral
+  initCAN();
+
+  // Initialize software watchdog (auto-resets ESP32 if main loop freezes)
+  esp_task_wdt_init(WDT_TIMEOUT_S, true);
+  esp_task_wdt_add(NULL);
+
   Serial.println("Ethanol Content Analyzer - ESP32-C3");
   Serial.println("Waiting for sensor data...");
 }
 
 void loop()
 {
-  // get ethanol content from sensor frequency
+  // Feed the watchdog to prove the main loop is alive
+  esp_task_wdt_reset();
+
+  // Check for sensor timeout
+  uint32_t now = millis();
+  if (lastSensorUpdateMs > 0 && (now - lastSensorUpdateMs >= SENSOR_TIMEOUT_MS)) {
+    if (sensorState != SENSOR_TIMEOUT) {
+      sensorState = SENSOR_TIMEOUT;
+      Serial.println("FAULT: Sensor timeout - no data received");
+    }
+  }
+
+  // Process new sensor data
   if (newData && calculateFrequency()) {
-    frequencyToEthanolContent(frequency, frequencyScaler);
-    dutyCycleToFuelTemperature(dutyCycle);
+    lastSensorUpdateMs = millis();
     newData = false;
+
+    // Validate signal before using it
+    SensorState validation = validateSignal(frequency, dutyCycle);
+
+    if (validation == SENSOR_OK) {
+      frequencyToEthanolContent(frequency, frequencyScaler);
+      dutyCycleToFuelTemperature(dutyCycle);
+
+      // Startup stabilization: count stable pulses before trusting data
+      if (sensorState == SENSOR_INITIALIZING) {
+        stablePulseCount++;
+        if (stablePulseCount >= STABLE_PULSES_REQUIRED) {
+          sensorState = SENSOR_OK;
+          Serial.println("Sensor: Stabilized - CAN output enabled");
+        }
+      } else {
+        sensorState = SENSOR_OK;
+      }
+    } else {
+      // Signal is invalid - apply safe defaults and log the fault
+      sensorState = validation;
+      ethanol = SAFE_ETHANOL_DEFAULT;
+      fuelTemperature = SAFE_TEMP_DEFAULT;
+      stablePulseCount = 0;
+
+      switch (validation) {
+        case SENSOR_UNDERRANGE:
+          Serial.printf("FAULT: Under-range frequency %.1f Hz - sensor failure/wiring\n", frequency);
+          break;
+        case SENSOR_CONTAMINATED:
+          Serial.printf("FAULT: Over-range frequency %.1f Hz - water contamination\n", frequency);
+          break;
+        case SENSOR_DUTY_INVALID:
+          Serial.printf("FAULT: Invalid duty cycle %.1f%% - sensor disconnected\n", dutyCycle);
+          break;
+        default:
+          break;
+      }
+    }
 
     Serial.print("Period (us): ");
     Serial.print(period);
@@ -49,7 +113,20 @@ void loop()
     Serial.print("%");
     Serial.print("\tFuel Temp: ");
     Serial.print(fuelTemperature, 1);
-    Serial.println(" C");
+    Serial.print(" C");
+    Serial.printf("\tState: %d\n", sensorState);
+  }
+
+  // Send CAN message at Zeitronix ECA-2 update rate (4 Hz)
+  // Only send if CAN is ready AND sensor has stabilized (not initializing or timed out)
+  if (canReady && (now - lastCANSend >= ZEITRONIX_CAN_INTERVAL_MS)) {
+    lastCANSend = now;
+
+    if (sensorState == SENSOR_TIMEOUT || sensorState == SENSOR_INITIALIZING) {
+      // Cease broadcast — don't send stale/unvalidated data to the DME
+    } else {
+      sendZeitronixCANMessage();
+    }
   }
 }
 
@@ -110,6 +187,25 @@ bool calculateFrequency() {
 }
 
 /**
+ * Validates the sensor signal against expected ranges.
+ * @param freq - Current frequency reading
+ * @param duty - Current duty cycle reading
+ * @return SensorState indicating the validation result
+ */
+SensorState validateSignal(float freq, float duty) {
+  if (freq < FREQ_UNDERRANGE_LIMIT)
+    return SENSOR_UNDERRANGE;
+
+  if (freq > FREQ_OVERRANGE_LIMIT)
+    return SENSOR_CONTAMINATED;
+
+  if (duty < DUTY_CYCLE_MIN || duty > DUTY_CYCLE_MAX)
+    return SENSOR_DUTY_INVALID;
+
+  return SENSOR_OK;
+}
+
+/**
  * Converts a sensor frequency to ethanol percentage
  * Ethanol % = Frequency (in Hz) - 50.0.
  * A value of 180 Hz - 190 Hz indicates contaminated fuel.
@@ -135,4 +231,62 @@ void dutyCycleToFuelTemperature(float dutyCycle) {
 
   // Linear interpolation: 10% duty = -40°C, 90% duty = 125°C
   fuelTemperature = TEMP_MIN + (clampedDuty - 10.0f) * (TEMP_MAX - TEMP_MIN) / 80.0f;
+}
+
+/**
+ * Initializes the ESP32-C3 TWAI peripheral for CAN bus output
+ * Configured to match Zeitronix ECA-2 CAN Bus defaults (500 Kbps, normal mode)
+ */
+void initCAN() {
+  twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT((gpio_num_t)CAN_TX_PIN, (gpio_num_t)CAN_RX_PIN, TWAI_MODE_NORMAL);
+  twai_timing_config_t t_config = ZEITRONIX_CAN_SPEED;
+  twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
+
+  if (twai_driver_install(&g_config, &t_config, &f_config) == ESP_OK) {
+    Serial.println("CAN: TWAI driver installed");
+  } else {
+    Serial.println("CAN: TWAI driver install FAILED");
+    canReady = false;
+    return;
+  }
+
+  if (twai_start() == ESP_OK) {
+    Serial.println("CAN: TWAI started (500 Kbps)");
+    canReady = true;
+  } else {
+    Serial.println("CAN: TWAI start FAILED");
+    twai_driver_uninstall();
+    canReady = false;
+  }
+}
+
+/**
+ * Sends a CAN message matching the Zeitronix ECA-2 CAN Bus protocol:
+ *   Data[0] = Ethanol % (0-100)
+ *   Data[1] = Fuel Temperature in C + 40 offset (raw byte)
+ *   Data[7] = Sensor status (0x00 = OK, 0x01 = fault)
+ */
+void sendZeitronixCANMessage() {
+  twai_message_t msg;
+  msg.identifier = ZEITRONIX_CAN_ID;
+  msg.extd = 0;           // Standard 11-bit ID
+  msg.rtr = 0;
+  msg.data_length_code = 8;
+
+  memset(msg.data, 0, 8);
+
+  // Data[0]: Ethanol percentage (0-100), clamped to uint8
+  msg.data[0] = (uint8_t)constrain((int)roundf(ethanol), 0, 100);
+
+  // Data[1]: Fuel temperature with +40 offset (raw = temp_C + 40)
+  int tempRaw = (int)roundf(fuelTemperature) + 40;
+  msg.data[1] = (uint8_t)constrain(tempRaw, 0, 255);
+
+  // Data[7]: Sensor status from state machine
+  msg.data[7] = (sensorState == SENSOR_OK) ? ZEITRONIX_SENSOR_OK : ZEITRONIX_SENSOR_FAULT;
+
+  esp_err_t result = twai_transmit(&msg, pdMS_TO_TICKS(10));
+  if (result != ESP_OK) {
+    Serial.printf("CAN: TX failed (0x%X)\n", result);
+  }
 }

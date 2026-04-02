@@ -4,16 +4,19 @@
 float ethanol = 0.f;
 float fuelTemperature = 0.f;
 
-// Frequency and duty cycle readings
-float frequency = 0.f, dutyCycle = 0.f;
+// Frequency readings
+float frequency = 0.f;
 const float frequencyScaler = ETHANOL_FREQUENCY_SCALER;
 
 // ISR shared variables
 volatile uint32_t risingEdgeTime = 0;
-volatile uint32_t fallingEdgeTime = 0;
 volatile uint32_t period = 0;
-volatile float rawDutyCycle = 0;
+volatile uint32_t pulseWidthUs = 0;
 volatile bool newData = false;
+
+// Timeout tracking
+volatile uint32_t lastValidReadingMs = 0;
+bool sensorTimedOut = false;
 
 void setup()
 {
@@ -30,10 +33,16 @@ void setup()
 
 void loop()
 {
+  checkSensorTimeout();
+
   // get ethanol content from sensor frequency
   if (newData && calculateFrequency()) {
+    lastValidReadingMs = millis();
     frequencyToEthanolContent(frequency, frequencyScaler);
-    dutyCycleToFuelTemperature(dutyCycle);
+
+    uint32_t capturedPulseWidth = pulseWidthUs;
+    pulseWidthToFuelTemperature(capturedPulseWidth);
+
     newData = false;
 
     Serial.print("Period (us): ");
@@ -44,19 +53,20 @@ void loop()
     Serial.print("\tEthanol: ");
     Serial.print(ethanol, 1);
     Serial.print("%");
-    Serial.print("\tDuty Cycle: ");
-    Serial.print(dutyCycle, 1);
-    Serial.print("%");
+    Serial.print("\tPulse Width: ");
+    Serial.print(capturedPulseWidth);
+    Serial.print(" us");
     Serial.print("\tFuel Temp: ");
     Serial.print(fuelTemperature, 1);
     Serial.println(" C");
   }
+
 }
 
 /**
  * GPIO interrupt handler - fires on both rising and falling edges
  * Measures period (rising-to-rising) and pulse width (rising-to-falling)
- * to get both frequency (ethanol %) and duty cycle (fuel temperature)
+ * to get both frequency (ethanol %) and pulse width (fuel temperature)
  */
 void IRAM_ATTR onSensorEdge() {
   uint32_t now = micros();
@@ -66,19 +76,14 @@ void IRAM_ATTR onSensorEdge() {
     // Rising edge: calculate period from last rising edge
     if (risingEdgeTime > 0) {
       period = now - risingEdgeTime;
-
-      // Calculate duty cycle from the previous pulse width
-      if (fallingEdgeTime > risingEdgeTime) {
-        uint32_t highTime = fallingEdgeTime - risingEdgeTime;
-        rawDutyCycle = (float)highTime / (float)period * 100.0f;
-      }
-
       newData = true;
     }
     risingEdgeTime = now;
   } else {
-    // Falling edge: record time for pulse width calculation
-    fallingEdgeTime = now;
+    // Falling edge: measure pulse width (rising-to-falling) in microseconds
+    if (risingEdgeTime > 0) {
+      pulseWidthUs = now - risingEdgeTime;
+    }
   }
 }
 
@@ -93,11 +98,8 @@ bool calculateFrequency() {
 
   float tempFrequency = 1000000.f / (float)capturedPeriod; // period is in microseconds
 
-  if (tempFrequency < 0 || tempFrequency > MAX_FREQUENCY)
+  if (tempFrequency < MIN_FREQUENCY || tempFrequency > MAX_FREQUENCY)
     return false;
-
-  // Capture duty cycle from ISR
-  dutyCycle = rawDutyCycle;
 
   // if we haven't calculated frequency, use the current frequency.
   // Otherwise, run it through an exponential filter to smooth readings
@@ -124,15 +126,45 @@ void frequencyToEthanolContent(float frequency, float scaler) {
 }
 
 /**
- * Converts the duty cycle of the sensor signal to fuel temperature
+ * Converts the pulse width of the sensor signal to fuel temperature
  * The Continental flex fuel sensor encodes temperature in the pulse width:
- * Duty cycle maps linearly from -40°C to 125°C across the 10%-90% range
- * @param dutyCycle - Duty cycle percentage (0-100)
+ * 1000 µs = -40°C, 5000 µs = +125°C (linear interpolation)
+ * @param pw - Pulse width in microseconds
  */
-void dutyCycleToFuelTemperature(float dutyCycle) {
-  // Clamp duty cycle to valid range
-  float clampedDuty = max(10.0f, min(90.0f, dutyCycle));
+void pulseWidthToFuelTemperature(uint32_t pw) {
+  // Validate pulse width range
+  if (pw < PULSE_WIDTH_MIN_US || pw > PULSE_WIDTH_MAX_US)
+    return;
 
-  // Linear interpolation: 10% duty = -40°C, 90% duty = 125°C
-  fuelTemperature = TEMP_MIN + (clampedDuty - 10.0f) * (TEMP_MAX - TEMP_MIN) / 80.0f;
+  // Linear interpolation: 1000 µs = -40°C, 5000 µs = +125°C
+  float clampedPw = max((float)PULSE_WIDTH_LOW_US, min((float)PULSE_WIDTH_HIGH_US, (float)pw));
+  float rawTemp = TEMP_MIN + (clampedPw - PULSE_WIDTH_LOW_US) * (TEMP_MAX - TEMP_MIN)
+                  / (float)(PULSE_WIDTH_HIGH_US - PULSE_WIDTH_LOW_US);
+
+  // EMA filter for temperature (changes slowly)
+  static bool tempInitialized = false;
+  if (!tempInitialized) {
+    fuelTemperature = rawTemp;
+    tempInitialized = true;
+  } else {
+    fuelTemperature = (1 - TEMPERATURE_ALPHA) * fuelTemperature + TEMPERATURE_ALPHA * rawTemp;
+  }
+}
+
+/**
+ * Checks if the sensor has timed out (no valid reading for SENSOR_TIMEOUT_MS)
+ * Sets sensorTimedOut flag and applies fallback ethanol value
+ */
+void checkSensorTimeout() {
+  if (lastValidReadingMs == 0) return;
+
+  if (millis() - lastValidReadingMs > SENSOR_TIMEOUT_MS) {
+    if (!sensorTimedOut) {
+      sensorTimedOut = true;
+      ethanol = FALLBACK_ETHANOL;
+      Serial.println("WARNING: Flex fuel sensor timed out! Using fallback values.");
+    }
+  } else {
+    sensorTimedOut = false;
+  }
 }

@@ -25,7 +25,6 @@ bool sensorTimedOut = false;
 void setup()
 {
   Serial.begin(115200);
-  while (!Serial) { delay(10); }
 
   // Setup GPIO interrupt for sensor input
   pinMode(ECA_INPUT, INPUT);
@@ -171,11 +170,13 @@ void setupBLE() {
     BLE_ETHANOL_UUID,
     NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY
   );
+  ethanolChar->createDescriptor("2901")->setValue("Ethanol Content (%)");
 
   temperatureChar = service->createCharacteristic(
     BLE_TEMPERATURE_UUID,
     NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY
   );
+  temperatureChar->createDescriptor("2901")->setValue("Fuel Temperature (C)");
 
   service->start();
   NimBLEDevice::startAdvertising();

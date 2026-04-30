@@ -1,76 +1,79 @@
+ETHANOL CONTENT ANALYZER - ESP32-C3 SUPER MINI WIRING DIAGRAM
+==============================================================
 
-  ETHANOL CONTENT ANALYZER - ESP32-C3 SUPER MINI WIRING DIAGRAM
-  ==============================================================
-
-  FLEX FUEL SENSOR (Continental / GM 13577429)
-  +------------------+
-  | Pin 1: 12V Power |-----> Vehicle 12V (ignition switched)
-  | Pin 2: Ground    |-----> Vehicle Ground
-  | Pin 3: Signal    |--+--> 5V Square Wave Output (50-150 Hz)
-  +------------------+  |
-                        |
-                        |
-  INPUT CIRCUIT         |    VOLTAGE DIVIDER (5V -> 3.3V)
-  (Sensor -> ESP32)     |
-                        |
-                        +---[R1 10kΩ]---+----> ESP32-C3 GPIO4
-                                        |
-                                       [R2 20kΩ]
-                                        |
-                                       GND
+FLEX FUEL SENSOR (Continental / GM 13577429)
++-----------------------------+
+| Pin 1: Ground  (yellow)     |-----> Vehicle Ground / ESP32 GND
+| Pin 2: Signal  (orange)     |--+--> ESP32-C3 GPIO4
+| Pin 3: 12V Power (green)    |-----> Vehicle 12V (ignition switched)
++-----------------------------+  |
+                                 |
+                                 +---[R1 2.2kΩ to 3.3kΩ]----> ESP32-C3 3V3
 
 
-  ESP32-C3 SUPER MINI
-  +-----------------------------+
-  |          USB-C              |
-  |       +--------+            |
-  |  5V  -|        |- GND       |
-  |  GND -|        |- 3V3      |
-  |  3V3 -|        |- GPIO10   |
-  |  GP4 -|  C3    |- GPIO9    |
-  |  GP5 -|        |- GPIO8    |
-  |  GP6 -|        |- GPIO7    |
-  |  GP7 -|        |- GPIO6    |
-  |  GP0 -|        |- GPIO5    |
-  |  GP1 -|        |- GPIO4  <---+-- Sensor signal (via divider)
-  |       +--------+            |
-  +-----------------------------+
+INPUT CIRCUIT
+=============
 
-  Note: GPIO4 is on the right side of the board.
-  Power the board via USB-C (for serial monitor) or 5V pin.
+The sensor output behaves as an open-collector/open-drain style signal in this
+project. Use an external pull-up to 3.3V. Do not use the old 10k/20k divider.
+
+  sensor signal (orange) ----+----> ESP32-C3 GPIO4
+                             |
+                             +---[R1 2.2kΩ to 3.3kΩ]----> ESP32-C3 3V3
 
 
-  POWER SUPPLY
-  ============
-  Option A: USB-C from a USB power bank or car USB adapter
-            (easiest for testing / prototyping)
-
-  Option B: 5V voltage regulator (LM7805 or DC-DC buck) from vehicle 12V
-            connected to the 5V pin on the board
-
-  The Flex Fuel Sensor is powered directly from vehicle 12V.
-  All grounds must be connected together (sensor, ESP32, vehicle).
-
-
-  COMPLETE PARTS LIST
-  ===================
-  1x  ESP32-C3 Super Mini
-  1x  Continental Flex Fuel Sensor (GM 13577429 or similar)
-  1x  R1 - 10kΩ resistor (voltage divider)
-  1x  R2 - 20kΩ resistor (voltage divider)
-  1x  USB-C cable (for serial monitor + power)
-  Optional: 5V voltage regulator if not using USB power
+ESP32-C3 SUPER MINI
++-----------------------------+
+|          USB-C              |
+|       +--------+            |
+|  5V  -|        |- GND <---------- Common ground with sensor/vehicle
+|  GND -|        |- 3V3 <---------- Pull-up resistor to signal
+|  3V3 -|        |- GPIO10   |
+|  GP4 -|  C3    |- GPIO9    |
+|  GP5 -|        |- GPIO8    |
+|  GP6 -|        |- GPIO7    |
+|  GP7 -|        |- GPIO6    |
+|  GP0 -|        |- GPIO5    |
+|  GP1 -|        |- GPIO4 <-----+-- Sensor signal (orange)
+|       +--------+            |  |
++-----------------------------+  |
+                                 +-- Pull-up to 3V3 (2.2kΩ to 3.3kΩ)
 
 
-  PIN SUMMARY
-  ===========
-  ESP32-C3 GPIO4  <-- Sensor signal (through 10k/20k voltage divider)
-  ESP32-C3 GND    --- Common ground with sensor and vehicle
-  ESP32-C3 5V     <-- Power input (USB or 5V regulator)
+POWER SUPPLY
+============
+Option A: USB-C from a USB power bank or car USB adapter
+          (easiest for testing / prototyping)
+
+Option B: 5V voltage regulator (LM7805 or DC-DC buck) from vehicle 12V
+          connected to the 5V pin on the board
+
+The flex fuel sensor is powered directly from vehicle 12V.
+All grounds must be connected together (sensor, ESP32, vehicle).
 
 
-  SERIAL OUTPUT (115200 baud)
-  ===========================
-  Prints to USB serial:
-    Period (us): 12500  Frequency: 80.0 Hz  Ethanol: 30.0%  Duty Cycle: 50.0%  Fuel Temp: 22.5 C
+COMPLETE PARTS LIST
+===================
+1x ESP32-C3 Super Mini
+1x Continental Flex Fuel Sensor (GM 13577429 or similar)
+1x 2.2kΩ or 3.3kΩ resistor (signal pull-up)
+1x USB-C cable (for serial monitor + power)
+Optional: 5V voltage regulator if not using USB power
 
+
+PIN SUMMARY
+===========
+ESP32-C3 GPIO4  <-- Sensor signal (orange, via pull-up to 3V3)
+ESP32-C3 3V3    --> Pull-up resistor for sensor signal
+ESP32-C3 GND    --- Common ground with sensor and vehicle
+ESP32-C3 5V     <-- Power input (USB or 5V regulator)
+
+Sensor yellow   --- Ground
+Sensor orange   --> Signal
+Sensor green    --> 12V
+
+
+SERIAL OUTPUT (115200 baud)
+===========================
+Prints to USB serial:
+  Period (us): 12378  Frequency: 80.8 Hz  Ethanol: 30.8%  Pulse Width: 2496 us  Fuel Temp: 21.7 C

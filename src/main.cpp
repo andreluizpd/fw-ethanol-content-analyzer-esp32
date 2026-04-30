@@ -1,28 +1,34 @@
 #include "main.h"
+#include <NimBLEDevice.h>
+#include <cstring>
 
-// State variables
+static NimBLECharacteristic* ethanolChar = nullptr;
+static NimBLECharacteristic* temperatureChar = nullptr;
+
 float ethanol = 0.f;
 float fuelTemperature = 0.f;
 
-// Frequency and duty cycle readings
-float frequency = 0.f, dutyCycle = 0.f;
+float frequency = 0.f;
 const float frequencyScaler = ETHANOL_FREQUENCY_SCALER;
 
-// ISR shared variables
 volatile uint32_t risingEdgeTime = 0;
 volatile uint32_t fallingEdgeTime = 0;
 volatile uint32_t period = 0;
-volatile float rawDutyCycle = 0;
+volatile uint32_t pulseWidthUs = 0;
 volatile bool newData = false;
+
+volatile uint32_t lastValidReadingMs = 0;
+bool sensorTimedOut = false;
 
 void setup()
 {
   Serial.begin(115200);
   while (!Serial) { delay(10); }
 
-  // Setup GPIO interrupt for sensor input
   pinMode(ECA_INPUT, INPUT);
   attachInterrupt(digitalPinToInterrupt(ECA_INPUT), onSensorEdge, CHANGE);
+
+  setupBLE();
 
   Serial.println("Ethanol Content Analyzer - ESP32-C3");
   Serial.println("Waiting for sensor data...");
@@ -30,11 +36,17 @@ void setup()
 
 void loop()
 {
-  // get ethanol content from sensor frequency
+  checkSensorTimeout();
+
   if (newData && calculateFrequency()) {
+    lastValidReadingMs = millis();
     frequencyToEthanolContent(frequency, frequencyScaler);
-    dutyCycleToFuelTemperature(dutyCycle);
+
+    uint32_t capturedPulseWidth = pulseWidthUs;
+    pulseWidthToFuelTemperature(capturedPulseWidth);
+
     newData = false;
+    updateBLE();
 
     Serial.print("Period (us): ");
     Serial.print(period);
@@ -44,95 +56,132 @@ void loop()
     Serial.print("\tEthanol: ");
     Serial.print(ethanol, 1);
     Serial.print("%");
-    Serial.print("\tDuty Cycle: ");
-    Serial.print(dutyCycle, 1);
-    Serial.print("%");
+    Serial.print("\tPulse Width: ");
+    Serial.print(capturedPulseWidth);
+    Serial.print(" us");
     Serial.print("\tFuel Temp: ");
     Serial.print(fuelTemperature, 1);
     Serial.println(" C");
   }
 }
 
-/**
- * GPIO interrupt handler - fires on both rising and falling edges
- * Measures period (rising-to-rising) and pulse width (rising-to-falling)
- * to get both frequency (ethanol %) and duty cycle (fuel temperature)
- */
-void IRAM_ATTR onSensorEdge() {
+void IRAM_ATTR onSensorEdge()
+{
   uint32_t now = micros();
   bool level = digitalRead(ECA_INPUT);
 
   if (level) {
-    // Rising edge: calculate period from last rising edge
     if (risingEdgeTime > 0) {
       period = now - risingEdgeTime;
-
-      // Calculate duty cycle from the previous pulse width
-      if (fallingEdgeTime > risingEdgeTime) {
-        uint32_t highTime = fallingEdgeTime - risingEdgeTime;
-        rawDutyCycle = (float)highTime / (float)period * 100.0f;
-      }
-
       newData = true;
+    }
+    if (fallingEdgeTime > 0) {
+      pulseWidthUs = now - fallingEdgeTime;
     }
     risingEdgeTime = now;
   } else {
-    // Falling edge: record time for pulse width calculation
     fallingEdgeTime = now;
   }
 }
 
-/**
- * Calculates frequency using the period measured by GPIO interrupts
- * @return boolean - true if valid frequency
- */
-bool calculateFrequency() {
+bool calculateFrequency()
+{
   uint32_t capturedPeriod = period;
-  if (capturedPeriod == 0)
+  if (capturedPeriod == 0) {
     return false;
+  }
 
-  float tempFrequency = 1000000.f / (float)capturedPeriod; // period is in microseconds
-
-  if (tempFrequency < 0 || tempFrequency > MAX_FREQUENCY)
+  float tempFrequency = 1000000.f / (float)capturedPeriod;
+  if (tempFrequency < MIN_FREQUENCY || tempFrequency > MAX_FREQUENCY) {
     return false;
+  }
 
-  // Capture duty cycle from ISR
-  dutyCycle = rawDutyCycle;
-
-  // if we haven't calculated frequency, use the current frequency.
-  // Otherwise, run it through an exponential filter to smooth readings
-  if (frequency == 0)
+  if (frequency == 0) {
     frequency = tempFrequency;
-  else
+  } else {
     frequency = (1 - FREQUENCY_ALPHA) * frequency + FREQUENCY_ALPHA * tempFrequency;
+  }
 
   return true;
 }
 
-/**
- * Converts a sensor frequency to ethanol percentage
- * Ethanol % = Frequency (in Hz) - 50.0.
- * A value of 180 Hz - 190 Hz indicates contaminated fuel.
- * @param frequency - Input frequency (1 / period)
- * @param scaler - Value by which interpolate frequencies between E0 and E100
- */
-void frequencyToEthanolContent(float frequency, float scaler) {
-  ethanol = (frequency - E0_FREQUENCY) / scaler;
-
-  // bound ethanol content by a max of 0 to 100
+void frequencyToEthanolContent(float measuredFrequency, float scaler)
+{
+  ethanol = (measuredFrequency - E0_FREQUENCY) / scaler;
   ethanol = max(0.0f, min(100.0f, ethanol));
 }
 
-/**
- * Converts the duty cycle of the sensor signal to fuel temperature
- * The Continental flex fuel sensor encodes temperature in the pulse width:
- * Duty cycle maps linearly from -40°C to 125°C across the 10%-90% range
- * @param dutyCycle - Duty cycle percentage (0-100)
- */
-void dutyCycleToFuelTemperature(float dutyCycle) {
-  // Clamp duty cycle to valid range
-  float clampedDuty = max(10.0f, min(90.0f, dutyCycle));
+void pulseWidthToFuelTemperature(uint32_t pulseWidth)
+{
+  if (pulseWidth < PULSE_WIDTH_MIN_US || pulseWidth > PULSE_WIDTH_MAX_US) {
+    return;
+  }
 
-  // Linear interpolation: 10% duty = -40°C, 90% duty = 125°C
-  fuelTemperature = TEMP_MIN + (clampedDuty - 10.0f) * (TEMP_MAX - TEMP_MIN) / 80.0f;
+  float clampedPulseWidth = max((float)PULSE_WIDTH_LOW_US, min((float)PULSE_WIDTH_HIGH_US, (float)pulseWidth));
+  float rawTemp = TEMP_MIN
+    + (clampedPulseWidth - PULSE_WIDTH_LOW_US) * (TEMP_MAX - TEMP_MIN)
+      / (float)(PULSE_WIDTH_HIGH_US - PULSE_WIDTH_LOW_US);
+
+  static bool tempInitialized = false;
+  if (!tempInitialized) {
+    fuelTemperature = rawTemp;
+    tempInitialized = true;
+  } else {
+    fuelTemperature = (1 - TEMPERATURE_ALPHA) * fuelTemperature + TEMPERATURE_ALPHA * rawTemp;
+  }
+}
+
+void setupBLE()
+{
+  NimBLEDevice::init(BLE_DEVICE_NAME);
+
+  NimBLEServer* server = NimBLEDevice::createServer();
+  NimBLEService* service = server->createService(BLE_SERVICE_UUID);
+
+  ethanolChar = service->createCharacteristic(
+    BLE_ETHANOL_UUID,
+    NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY
+  );
+  ethanolChar->createDescriptor("2901")->setValue("Ethanol Content (%)");
+
+  temperatureChar = service->createCharacteristic(
+    BLE_TEMPERATURE_UUID,
+    NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY
+  );
+  temperatureChar->createDescriptor("2901")->setValue("Fuel Temperature (C)");
+
+  service->start();
+  NimBLEDevice::startAdvertising();
+
+  Serial.println("BLE advertising as \"" BLE_DEVICE_NAME "\"");
+}
+
+void updateBLE()
+{
+  char buf[16];
+
+  snprintf(buf, sizeof(buf), "%.1f%%", ethanol);
+  ethanolChar->setValue(reinterpret_cast<const uint8_t*>(buf), strlen(buf));
+  ethanolChar->notify();
+
+  snprintf(buf, sizeof(buf), "%.1f C", fuelTemperature);
+  temperatureChar->setValue(reinterpret_cast<const uint8_t*>(buf), strlen(buf));
+  temperatureChar->notify();
+}
+
+void checkSensorTimeout()
+{
+  if (lastValidReadingMs == 0) {
+    return;
+  }
+
+  if (millis() - lastValidReadingMs > SENSOR_TIMEOUT_MS) {
+    if (!sensorTimedOut) {
+      sensorTimedOut = true;
+      ethanol = FALLBACK_ETHANOL;
+      Serial.println("WARNING: Flex fuel sensor timed out! Using fallback values.");
+    }
+  } else {
+    sensorTimedOut = false;
+  }
 }

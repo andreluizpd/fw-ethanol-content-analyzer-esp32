@@ -19,7 +19,7 @@ The Continental/GM flex fuel sensor is a two-wire digital sensor that outputs a 
 | Parameter        | Encoding              | Range                  |
 |------------------|-----------------------|------------------------|
 | Ethanol %        | Frequency of signal   | 50 Hz (0%) – 150 Hz (100%) |
-| Fuel temperature | Pulse width (high time) | 1000 µs (−40°C) – 5000 µs (+125°C) |
+| Fuel temperature | Pulse width (low time, project implementation) | 1000 µs (−40°C) – 5000 µs (+125°C) |
 
 The sensor continuously outputs this signal whenever powered. No request/response protocol is needed.
 
@@ -33,9 +33,21 @@ The sensor continuously outputs this signal whenever powered. No request/respons
         R1   F1          R2     F2        R3
 
    Frequency = 1 / (R2 - R1)           → ethanol %
-   Pulse width = F1 - R1               → fuel temperature
+   Pulse width = R2 - F1               → fuel temperature
    R = rising edge, F = falling edge
 ```
+
+### Project Note: Measured Sensor Polarity
+
+On this project hardware, bench and in-car oscilloscope captures showed that fuel
+temperature is represented by the **low pulse width** rather than the high pulse width.
+The firmware in this repository therefore measures temperature as:
+
+```
+lowPulseWidthUs = nextRisingEdge - previousFallingEdge
+```
+
+Frequency is still measured from rising edge to rising edge.
 
 ---
 
@@ -110,9 +122,12 @@ On RISING edge (value == true):
     Reset pulse timer (flexPulse)
 
 On FALLING edge (value == false):
-    if gotRising == true:
-        // Measure pulse width (time from last rising edge to this falling edge)
-        pulseWidthUs = flexPulse.getElapsedUs()
+    Record falling edge timestamp
+
+On RISING edge (value == true):
+    if there was a previous falling edge:
+        // Measure low pulse width (time from falling edge to this rising edge)
+        pulseWidthUs = now - lastFallingEdge
         Process fuel temperature from pulse width (see section 3.2)
 ```
 
@@ -145,7 +160,7 @@ Output: filtered ethanol percentage (0–100)
 
 ### 3.2. Fuel Temperature from Pulse Width
 
-Measured on falling edge, from the time elapsed since the last rising edge:
+Measured on rising edge, from the time elapsed since the last falling edge:
 
 ```
 Input:  pulseWidthUs (microseconds)

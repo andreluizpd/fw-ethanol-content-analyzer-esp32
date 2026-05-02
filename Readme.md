@@ -24,7 +24,7 @@ Based on the [original project](https://github.com/outlandnish/fw-ethanol-conten
 
 **CAN bus** — requires an external 3.3V CAN transceiver (e.g. SN65HVD230):
 
-- Connect **GPIO5** (TX) and **GPIO6** (RX) to the transceiver
+- Connect **GPIO3** (TX) and **GPIO2** (RX) to the transceiver
 - If your SN65HVD230 breakout includes an onboard `120Ω` terminator, remove or disable it when tapping into an already-terminated vehicle CAN bus. On common blue boards this is often **R2** marked `121`.
 
 **Power**: USB-C (easiest) or 5V regulator from vehicle 12V
@@ -33,9 +33,9 @@ Based on the [original project](https://github.com/outlandnish/fw-ethanol-conten
 
 | Function     | GPIO  | Notes                              |
 | ------------ | ----- | ---------------------------------- |
-| Sensor Input | GPIO4 | Use voltage divider from 5V signal |
-| CAN TX       | GPIO5 | To CAN transceiver TX pin          |
-| CAN RX       | GPIO6 | From CAN transceiver RX pin        |
+| Sensor Input | GPIO4 | Use 2.2kΩ to 3.3kΩ pull-up to 3V3  |
+| CAN TX       | GPIO3 | To CAN transceiver TX pin          |
+| CAN RX       | GPIO2 | From CAN transceiver RX pin        |
 
 ### Parts List
 

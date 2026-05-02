@@ -143,8 +143,9 @@
       <li><b>Row 1:</b> Buck OUT+ (A) → trace → ESP32:5V (D)</li>
       <li><b>Row 2:</b> Buck OUT- (B) → trace → ESP32:GND (D)</li>
       <li><b>Row 3:</b> SN65:3V3 (B) → trace → ESP32:3V3 (D)</li>
-      <li><b>Row 5:</b> SN65:CTX (B) → trace → ESP32:GP5 (D)</li>
-      <li><b>Row 6:</b> SN65:CRX (B) → trace → ESP32:GP6 (D)</li>
+      <li><b>Rows 4 and 9:</b> linked by sensor jumper wire at col G</li>
+      <li><b>Row 5:</b> SN65:CTX (B) → trace → ESP32:GP3 (D)</li>
+      <li><b>Row 6:</b> SN65:CRX (B) → trace → ESP32:GP2 (D)</li>
       <li><b>Row 7:</b> CAN-H (A) → trace → SN65:CANH (B) &nbsp;[cut at C]</li>
       <li><b>Row 8:</b> CAN-L (A) → trace → SN65:CANL (B) &nbsp;[cut at C]</li>
     </ul>
@@ -153,25 +154,28 @@
     <h3>Jumper Wires</h3>
     <div class="wire" data-wire="J1" onmouseenter="hlWire('J1')" onmouseleave="hlWire(null)"><span class="wire-dot wire-cyan"></span> JUMP1: H2 → H10 &nbsp;(GND bus → Buck IN-)</div>
     <div class="wire" data-wire="J2" onmouseenter="hlWire('J2')" onmouseleave="hlWire(null)"><span class="wire-dot wire-cyan"></span> JUMP2: A2 → A4 &nbsp;(GND bus → SN65 GND row)</div>
+    <div class="wire" data-wire="J3" onmouseenter="hlWire('J3')" onmouseleave="hlWire(null)"><span class="wire-dot wire-red"></span> JUMP3: G9 → G4 &nbsp;(sensor DATA row → GPIO4 row)</div>
   </div>
   <div class="card">
     <h3>Track Cuts Needed</h3>
     <ul>
       <li><b>Row 4, between C–D:</b> isolate SN65:GND from ESP32:GP4</li>
       <li><b>Rows 1–8, col I:</b> (×8) isolate ESP32 right pins from left traces</li>
-      <li><b>Row 7, col C:</b> isolate CANH from GP7</li>
-      <li><b>Row 8, col C:</b> isolate CANL from GP8</li>
+      <li><b>Row 7, col C:</b> isolate CANH from GP1</li>
+      <li><b>Row 8, col C:</b> isolate CANL from GP0</li>
       <li><b>Row 11, between E–F:</b> isolate D cathode from D anode</li>
     </ul>
   </div>
   <div class="card">
-    <h3>Voltage Divider (rows 2→4→9)</h3>
-    <p>Sensor 5V → R10K → <b>GP4 (3.33V)</b> → R20K → GND</p>
+    <h3>Sensor Pull-Up</h3>
+    <p>Fit a single <b>2k2 pull-up resistor</b> from <b>F3</b> to <b>F9</b>.</p>
     <ul>
-      <li>R20K: legs at E2 (GND row) and E4 (GP4 row)</li>
-      <li>R10K: legs at F4 (GP4 row) and F9 (signal row)</li>
+      <li><b>Current CAN pins:</b> GPIO3 = TX, GPIO2 = RX</li>
+      <li><b>Current sensor pin:</b> GPIO4</li>
+      <li><b>Pull-up resistor:</b> F3 → F9</li>
+      <li><b>Sensor jumper:</b> G9 → G4</li>
     </ul>
-    <p style="margin-top:3px;">Vout = 5V × 20K/(10K+20K) = <b>3.33V</b> ✓</p>
+    <p style="margin-top:3px;">Do not fit the old 10k/20k divider parts in this version.</p>
   </div>
   <div class="card">
     <h3>Power Protection (rows 10–11)</h3>
@@ -201,13 +205,13 @@ const colLabels = 'ABCDEFGHIJ'.split('');
 const rowNotes = {
   0: 'Buck OUT+ → 5V → ESP',
   1: 'Buck OUT- → GND → ESP',
-  2: '3V3 (SN65 ↔ ESP)',
-  3: 'SN65:GND | GP4 + divider',
-  4: 'CTX ↔ GP5 (CAN TX)',
-  5: 'CRX ↔ GP6 (CAN RX)',
-  6: 'CANH → SN65 → GP7',
-  7: 'CANL → SN65 → GP8',
-  8: 'R10K + DATA sensor',
+  2: '3V3 (SN65 ↔ ESP) | 2k2 top at F3',
+  3: 'SN65:GND | GP4 sensor input',
+  4: 'CTX ↔ GP3 (CAN TX)',
+  5: 'CRX ↔ GP2 (CAN RX)',
+  6: 'CANH → SN65 → GP1',
+  7: 'CANL → SN65 → GP0',
+  8: 'DATA sensor input | 2k2 bottom at F9 | wire to G4',
   9: 'Cap- / Buck IN- / GND',
   10: 'Cap+ / Buck IN+ / Diode / 12V',
 };
@@ -222,56 +226,56 @@ c(0, 0, 'buck', 'B+', 'Buck OUT+ (col A)');
 c(0, 3, 'esp-left', '5V', 'ESP32: 5V (col D) — trace from Buck OUT+');
 c(0, 9, 'esp-right', 'ESP', 'ESP32 right side row 1');
 
-// Row 2 (idx 1): Buck out- → GND → ESP + R20K
+// Row 2 (idx 1): Buck out- → GND → ESP
 c(1, 0, 'jumper', 'J2', 'JUMP2: connects to row 4 col A (SN65 GND)');
 c(1, 1, 'buck', 'B-', 'Buck OUT- (col B)');
 c(1, 3, 'esp-left', 'GND', 'ESP32: GND (col D)');
-c(1, 4, 'resistor', 'R20K', 'R20K leg: GND side (col E) — bridges to row 4');
 c(1, 7, 'jumper', 'J1', 'JUMP1: connects to row 10 col H (Buck IN-)');
 c(1, 9, 'esp-right', 'ESP', 'ESP32 right side row 2');
 
-// Row 3 (idx 2): 3V3 SN65 ↔ ESP
+// Row 3 (idx 2): 3V3 SN65 ↔ ESP + pull-up top leg
 c(2, 1, 'sn65', '3V3', 'SN65: 3.3V (col B) — trace → ESP32:3V3');
 c(2, 3, 'esp-left', '3V3', 'ESP32: 3.3V (col D) — trace from SN65');
+c(2, 5, 'resistor', '2K2', '2k2 pull-up resistor top leg at F3 — bridges to row 9');
 c(2, 9, 'esp-right', 'ESP', 'ESP32 right side row 3');
 
-// Row 4 (idx 3): SN65:GND | GP4 + divider resistors
+// Row 4 (idx 3): SN65:GND | GP4 sensor input
 c(3, 0, 'jumper', 'J2', 'JUMP2: connects to row 2 col A (GND bus)');
 c(3, 1, 'sn65', 'GND', 'SN65: GND (col B)');
 // cut between C and D
 c(3, 2, 'cut', 'X', 'Track cut — isolate SN65:GND from GP4');
 c(3, 3, 'esp-left', 'GP4', 'ESP32: GPIO4 — sensor input (col D)');
-c(3, 4, 'resistor', 'R20K', 'R20K leg: GP4 side (col E) — bridges from row 2');
-c(3, 5, 'resistor', 'R10K', 'R10K leg: GP4 side (col F) — bridges to row 9');
+c(3, 6, 'jumper', 'J3', 'JUMP3: connects to row 9 col G (sensor DATA row)');
 c(3, 9, 'esp-right', 'ESP', 'ESP32 right side row 4');
 
-// Row 5 (idx 4): CTX ↔ GP5
-c(4, 1, 'sn65', 'CTX', 'SN65: CAN TX (col B) — trace → GP5');
-c(4, 3, 'esp-left', 'GP5', 'ESP32: GPIO5 CAN TX (col D)');
+// Row 5 (idx 4): CTX ↔ GP3
+c(4, 1, 'sn65', 'CTX', 'SN65: CAN TX (col B) — trace → GP3');
+c(4, 3, 'esp-left', 'GP3', 'ESP32: GPIO3 CAN TX (col D)');
 c(4, 9, 'esp-right', 'ESP', 'ESP32 right side row 5');
 
-// Row 6 (idx 5): CRX ↔ GP6
-c(5, 1, 'sn65', 'CRX', 'SN65: CAN RX (col B) — trace → GP6');
-c(5, 3, 'esp-left', 'GP6', 'ESP32: GPIO6 CAN RX (col D)');
+// Row 6 (idx 5): CRX ↔ GP2
+c(5, 1, 'sn65', 'CRX', 'SN65: CAN RX (col B) — trace → GP2');
+c(5, 3, 'esp-left', 'GP2', 'ESP32: GPIO2 CAN RX (col D)');
 c(5, 9, 'esp-right', 'ESP', 'ESP32 right side row 6');
 
 // Row 7 (idx 6): CANH
 c(6, 0, 'j-can', 'H', 'CAN-H connector (col A)');
 c(6, 1, 'sn65', 'CANH', 'SN65: CANH (col B)');
-c(6, 2, 'cut', 'X', 'Track cut — isolate CANH from GP7');
-c(6, 3, 'esp-left', 'GP7', 'ESP32: GPIO7 (col D)');
+c(6, 2, 'cut', 'X', 'Track cut — isolate CANH from GP1');
+c(6, 3, 'esp-left', 'GP1', 'ESP32: GPIO1 (col D)');
 c(6, 9, 'esp-right', 'ESP', 'ESP32 right side row 7');
 
 // Row 8 (idx 7): CANL
 c(7, 0, 'j-can', 'L', 'CAN-L connector (col A)');
 c(7, 1, 'sn65', 'CANL', 'SN65: CANL (col B)');
-c(7, 2, 'cut', 'X', 'Track cut — isolate CANL from GP8');
-c(7, 3, 'esp-left', 'GP8', 'ESP32: GPIO8 (col D)');
+c(7, 2, 'cut', 'X', 'Track cut — isolate CANL from GP0');
+c(7, 3, 'esp-left', 'GP0', 'ESP32: GPIO0 (col D)');
 c(7, 9, 'esp-right', 'ESP', 'ESP32 right side row 8');
 
-// Row 9 (idx 8): R10K + DATA
-c(8, 5, 'resistor', 'R10K', 'R10K leg: signal side (col F) — bridges from row 4');
-c(8, 9, 'j-data', 'DATA', 'Sensor DATA input 5V PWM (col J)');
+// Row 9 (idx 8): DATA + pull-up bottom + sensor jumper
+c(8, 5, 'resistor', '2K2', '2k2 pull-up resistor bottom leg at F9 — bridges from row 3');
+c(8, 6, 'jumper', 'J3', 'JUMP3: connects to row 4 col G (GPIO4 row)');
+c(8, 9, 'j-data', 'DATA', 'Sensor DATA input (col J)');
 
 // Row 10 (idx 9): cap- / Buck IN- / JUMP1 / GND
 c(9, 3, 'cap-neg', 'C-', '100µF cap − leg (col D)');
@@ -302,6 +306,7 @@ for (let r = 0; r <= 7; r++) {
 const wires = [
   ['J1', 1, 7, 9, 7, '#0ad'],
   ['J2', 1, 0, 3, 0, '#0ad'],
+  ['J3', 8, 6, 3, 6, '#e67e22'],
 ];
 
 // Build the grid

@@ -6,8 +6,8 @@
 
 // I/O
 #define ECA_INPUT                 4
-#define CAN_TX_PIN                5
-#define CAN_RX_PIN                6
+#define CAN_TX_PIN                3
+#define CAN_RX_PIN                2
 
 // Signal processing
 #define FREQUENCY_ALPHA           0.01f
@@ -16,6 +16,7 @@
 #define E0_FREQUENCY              50.f
 #define E100_FREQUENCY            150.f
 #define ETHANOL_FREQUENCY_SCALER  ((E100_FREQUENCY - E0_FREQUENCY) / 100.0f)
+#define ETHANOL_MAX_CAP           55.0f
 
 // Validation thresholds
 #define FREQ_UNDERRANGE_LIMIT     45.f
@@ -38,6 +39,12 @@
 // Temperature
 #define TEMP_MIN                  -40.0f
 #define TEMP_MAX                  125.0f
+
+// BLE
+#define BLE_DEVICE_NAME           "BimmerWest Flex Kit"
+#define BLE_SERVICE_UUID          "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define BLE_ETHANOL_UUID          "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+#define BLE_TEMPERATURE_UUID      "beb5483f-36e1-4688-b7f5-ea07361b26a8"
 
 // Zeitronix ECA-2 CAN Bus defaults
 #define ZEITRONIX_CAN_ID          0x00EC
@@ -82,3 +89,5 @@ void onSensorEdge();
 void initCAN();
 void sendZeitronixCANMessage();
 void printSensorReading();
+void setupBLE();
+void updateBLE();

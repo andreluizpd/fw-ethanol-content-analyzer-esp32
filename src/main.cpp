@@ -1,5 +1,9 @@
 #include "main.h"
+#include <NimBLEDevice.h>
 #include <cstring>
+
+static NimBLECharacteristic* ethanolChar = nullptr;
+static NimBLECharacteristic* temperatureChar = nullptr;
 
 // State variables
 float ethanol = SAFE_ETHANOL_DEFAULT;
@@ -32,6 +36,7 @@ void setup()
   pinMode(ECA_INPUT, INPUT);
   attachInterrupt(digitalPinToInterrupt(ECA_INPUT), onSensorEdge, CHANGE);
 
+  setupBLE();
   initCAN();
 
   // Reset the MCU if the main loop ever stalls for too long.
@@ -111,6 +116,8 @@ void loop()
       }
     }
 
+    updateBLE();
+
   }
 
   if (canReady && (now - lastCANSend >= ZEITRONIX_CAN_INTERVAL_MS)) {
@@ -183,7 +190,7 @@ SensorState validateSignal(float freq, float duty)
 void frequencyToEthanolContent(float measuredFrequency, float scaler)
 {
   ethanol = (measuredFrequency - E0_FREQUENCY) / scaler;
-  ethanol = max(0.0f, min(100.0f, ethanol));
+  ethanol = max(0.0f, min(ETHANOL_MAX_CAP, ethanol));
 }
 
 void dutyCycleToFuelTemperature(float dutyCycle)
@@ -234,7 +241,7 @@ void sendZeitronixCANMessage()
 
   memset(msg.data, 0, sizeof(msg.data));
 
-  msg.data[0] = (uint8_t)constrain((int)roundf(ethanolToSend), 0, 100);
+  msg.data[0] = (uint8_t)constrain((int)roundf(ethanolToSend), 0, (int)ETHANOL_MAX_CAP);
 
   int tempRaw = (int)roundf(temperatureToSend) + 40;
   msg.data[1] = (uint8_t)constrain(tempRaw, 0, 255);
@@ -258,4 +265,46 @@ void printSensorReading()
   Serial.print(fuelTemperature, 1);
   Serial.print(" C, State ");
   Serial.println((int)sensorState);
+}
+
+void setupBLE()
+{
+  NimBLEDevice::init(BLE_DEVICE_NAME);
+
+  NimBLEServer* server = NimBLEDevice::createServer();
+  NimBLEService* service = server->createService(BLE_SERVICE_UUID);
+
+  ethanolChar = service->createCharacteristic(
+    BLE_ETHANOL_UUID,
+    NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY
+  );
+  ethanolChar->createDescriptor("2901")->setValue("Ethanol Content (%)");
+
+  temperatureChar = service->createCharacteristic(
+    BLE_TEMPERATURE_UUID,
+    NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY
+  );
+  temperatureChar->createDescriptor("2901")->setValue("Fuel Temperature (C)");
+
+  service->start();
+  NimBLEDevice::startAdvertising();
+
+  Serial.println("BLE advertising as \"" BLE_DEVICE_NAME "\"");
+}
+
+void updateBLE()
+{
+  if (ethanolChar == nullptr || temperatureChar == nullptr) {
+    return;
+  }
+
+  char buf[16];
+
+  snprintf(buf, sizeof(buf), "%.1f%%", ethanol);
+  ethanolChar->setValue(reinterpret_cast<const uint8_t*>(buf), strlen(buf));
+  ethanolChar->notify();
+
+  snprintf(buf, sizeof(buf), "%.1f C", fuelTemperature);
+  temperatureChar->setValue(reinterpret_cast<const uint8_t*>(buf), strlen(buf));
+  temperatureChar->notify();
 }

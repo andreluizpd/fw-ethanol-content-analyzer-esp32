@@ -26,17 +26,23 @@ ESP32-C3 SUPER MINI
 +-----------------------------+
 |          USB-C              |
 |       +--------+            |
-|  5V  -|        |- GND <---------- Common ground with sensor/vehicle
-|  GND -|        |- 3V3 <---------- Pull-up resistor to signal
-|  3V3 -|        |- GPIO10   |
-|  GP4 -|  C3    |- GPIO9    |
-|  GP5 -|        |- GPIO8    |
-|  GP6 -|        |- GPIO7    |
-|  GP7 -|        |- GPIO6  ----+-- CAN RX (from SN65HVD230 R)
-|  GP0 -|        |- GPIO5  ----+-- CAN TX (to SN65HVD230 D)
-|  GP1 -|        |- GPIO4  <---+-- Sensor signal (orange)
+|  5V  -|        |- GPIO5      |
+|  GND -|        |- GPIO6      |
+|  3V3 -|        |- GPIO7      |
+|  GP4 -|  C3    |- GPIO8      |
+|  GP3 -|        |- GPIO9      |
+|  GP2 -|        |- GPIO10     |
+|  GP1 -|        |- GPIO20     |
+|  GP0 -|        |- GPIO21     |
 |       +--------+            |
 +-----------------------------+
+
+Left-side connections used here:
+  3V3   <--- Pull-up resistor to sensor signal
+  GND   <--- Common ground with sensor/vehicle
+  GPIO4 <--- Sensor signal (orange)
+  GPIO3 ----> CAN TX (to SN65HVD230 D)
+  GPIO2 <---- CAN RX (from SN65HVD230 R)
 
 
 CAN BUS - SN65HVD230 MODULE
@@ -46,8 +52,8 @@ ESP32-C3                SN65HVD230 Module              CAN Bus
 --------                -----------------              -------
 3V3 ------------------> 3V3
 GND ------------------> GND
-GPIO5 (TX) -----------> CTX
-GPIO6 (RX) <----------- CRX
+GPIO3 (TX) -----------> CTX
+GPIO2 (RX) <----------- CRX
                         CANH -----------------> CAN Bus High  ---+
                         CANL -----------------> CAN Bus Low   ---+
                                                (to ECU / dash / logger)
@@ -57,8 +63,8 @@ GPIO6 (RX) <----------- CRX
 |                   |
 |  3V3  <--------------- ESP32 3V3
 |  GND  <--------------- ESP32 GND
-|  CTX  <--------------- ESP32 GPIO5
-|  CRX  ---------------> ESP32 GPIO6
+|  CTX  <--------------- ESP32 GPIO3
+|  CRX  ---------------> ESP32 GPIO2
 |  CANH ----------------> CAN Bus High
 |  CANL ----------------> CAN Bus Low
 |                   |
@@ -126,8 +132,8 @@ Optional: 120Ω resistor (CAN termination, if not on module)
 PIN SUMMARY
 ===========
 ESP32-C3 GPIO4  <-- Sensor signal (orange, via pull-up to 3V3)
-ESP32-C3 GPIO5  --> CAN TX (to SN65HVD230 D pin)
-ESP32-C3 GPIO6  <-- CAN RX (from SN65HVD230 R pin)
+ESP32-C3 GPIO3  --> CAN TX (to SN65HVD230 D pin)
+ESP32-C3 GPIO2  <-- CAN RX (from SN65HVD230 R pin)
 ESP32-C3 3V3    --> Pull-up resistor and SN65HVD230 VCC
 ESP32-C3 GND    --- Common ground (sensor, CAN transceiver, vehicle)
 ESP32-C3 5V     <-- Power input (USB or 5V regulator)

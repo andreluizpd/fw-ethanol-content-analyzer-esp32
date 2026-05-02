@@ -145,7 +145,7 @@ CAN ID:       0x00EC (standard 11-bit)
 Speed:        500 Kbps
 Update rate:  250 ms (4 Hz)
 
-Data[0] = Ethanol %       (0-100)
+Data[0] = Ethanol %       (0-55, capped)
 Data[1] = Fuel Temp       (raw byte - 40 = °C)
 Data[7] = Sensor Status   (0x00 = OK, 0x01 = fault)
 
@@ -153,4 +153,5 @@ Data[7] = Sensor Status   (0x00 = OK, 0x01 = fault)
 SERIAL OUTPUT (115200 baud)
 ===========================
 Prints to USB serial:
-  Period (us): 12378  Frequency: 80.8 Hz  Ethanol: 30.8%  Pulse Width: 2496 us  Fuel Temp: 21.7 C
+  Sensor: Stabilized - readings valid
+  Reading: 80.8 Hz, Ethanol 30.8%, Temp 21.7 C, State 1

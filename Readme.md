@@ -9,7 +9,7 @@ Based on the [original project](https://github.com/outlandnish/fw-ethanol-conten
 ### Features
 
 - **Ethanol content** — reads sensor frequency (50–150 Hz) and converts to ethanol percentage (0–100%)
-- **Fuel temperature** — decodes sensor pulse width to report fuel temperature (-40°C to 125°C)
+- **Fuel temperature** — decodes sensor duty cycle to report fuel temperature (-40°C to 125°C)
 - **CAN bus output** — sends Zeitronix ECA-2 compatible CAN messages (500 Kbps, 4 Hz)
 - **Serial output** — prints all readings to USB serial at 115200 baud
 
@@ -56,7 +56,8 @@ At 115200 baud you'll see:
 ```
 Ethanol Content Analyzer - ESP32-C3
 Waiting for sensor data...
-Period (us): 12378  Frequency: 80.8 Hz  Ethanol: 30.8%  Pulse Width: 2496 us  Fuel Temp: 21.7 C
+Sensor: Stabilized - readings valid
+Reading: 80.8 Hz, Ethanol 30.8%, Temp 21.7 C, State 1
 ```
 
 ### CAN Bus Output (Zeitronix ECA-2 Compatible)
@@ -71,7 +72,7 @@ Messages are sent using the Zeitronix ECA-2 CAN protocol so that existing dashes
 
 | Byte | Content       | Encoding                |
 | ---- | ------------- | ----------------------- |
-| 0    | Ethanol %     | 0–100, direct value     |
+| 0    | Ethanol %     | 0–55, capped value      |
 | 1    | Fuel Temp °C  | raw byte − 40           |
 | 2–6  | Reserved      | 0x00                    |
 | 7    | Sensor Status | 0x00 = OK, 0x01 = fault |
@@ -81,5 +82,5 @@ Messages are sent using the Zeitronix ECA-2 CAN protocol so that existing dashes
 Uses Continental Flex Fuel sensor (e.g., GM 13577429):
 
 - **Frequency** (50–150 Hz) → Ethanol content (0–100%)
-- **Pulse width** (1–5 ms) → Fuel temperature (-40°C to 125°C)
+- **Duty cycle** (10–90%) → Fuel temperature (-40°C to 125°C)
 - **180–190 Hz** → Contaminated fuel

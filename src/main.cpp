@@ -67,57 +67,59 @@ void loop()
       stablePulseCount = 0;
       ethanol = SAFE_ETHANOL_DEFAULT;
       fuelTemperature = SAFE_TEMP_DEFAULT;
+      updateBLE();
       Serial.println("FAULT: Sensor timeout - no data received");
     }
   }
 
-  if (newData && calculateFrequency()) {
-    lastSensorUpdateMs = millis();
+  if (newData) {
     newData = false;
+    if (calculateFrequency()) {
+      lastSensorUpdateMs = millis();
 
-    SensorState validation = validateSignal(frequency, dutyCycle);
+      SensorState validation = validateSignal(frequency, dutyCycle);
 
-    if (validation == SENSOR_OK) {
-      frequencyToEthanolContent(frequency, frequencyScaler);
-      dutyCycleToFuelTemperature(dutyCycle);
+      if (validation == SENSOR_OK) {
+        frequencyToEthanolContent(frequency, frequencyScaler);
+        dutyCycleToFuelTemperature(dutyCycle);
 
-      if (sensorState == SENSOR_INITIALIZING) {
-        stablePulseCount++;
-        if (stablePulseCount >= STABLE_PULSES_REQUIRED) {
+        if (sensorState == SENSOR_INITIALIZING) {
+          stablePulseCount++;
+          if (stablePulseCount >= STABLE_PULSES_REQUIRED) {
+            sensorState = SENSOR_OK;
+            Serial.println("Sensor: Stabilized - readings valid");
+            printSensorReading();
+          }
+        } else {
           sensorState = SENSOR_OK;
-          Serial.println("Sensor: Stabilized - CAN output enabled");
+        }
+
+        if (lastSerialReadingMs == 0 || (now - lastSerialReadingMs >= SERIAL_READING_INTERVAL_MS)) {
           printSensorReading();
         }
       } else {
-        sensorState = SENSOR_OK;
+        sensorState = validation;
+        ethanol = SAFE_ETHANOL_DEFAULT;
+        fuelTemperature = SAFE_TEMP_DEFAULT;
+        stablePulseCount = 0;
+
+        switch (validation) {
+          case SENSOR_UNDERRANGE:
+            Serial.printf("FAULT: Under-range frequency %.1f Hz - sensor failure/wiring\n", frequency);
+            break;
+          case SENSOR_CONTAMINATED:
+            Serial.printf("FAULT: Over-range frequency %.1f Hz - water contamination\n", frequency);
+            break;
+          case SENSOR_DUTY_INVALID:
+            Serial.printf("FAULT: Invalid duty cycle %.1f%% - sensor disconnected\n", dutyCycle);
+            break;
+          default:
+            break;
+        }
       }
 
-      if (lastSerialReadingMs == 0 || (now - lastSerialReadingMs >= SERIAL_READING_INTERVAL_MS)) {
-        printSensorReading();
-      }
-    } else {
-      sensorState = validation;
-      ethanol = SAFE_ETHANOL_DEFAULT;
-      fuelTemperature = SAFE_TEMP_DEFAULT;
-      stablePulseCount = 0;
-
-      switch (validation) {
-        case SENSOR_UNDERRANGE:
-          Serial.printf("FAULT: Under-range frequency %.1f Hz - sensor failure/wiring\n", frequency);
-          break;
-        case SENSOR_CONTAMINATED:
-          Serial.printf("FAULT: Over-range frequency %.1f Hz - water contamination\n", frequency);
-          break;
-        case SENSOR_DUTY_INVALID:
-          Serial.printf("FAULT: Invalid duty cycle %.1f%% - sensor disconnected\n", dutyCycle);
-          break;
-        default:
-          break;
-      }
+      updateBLE();
     }
-
-    updateBLE();
-
   }
 
   if (canReady && (now - lastCANSend >= ZEITRONIX_CAN_INTERVAL_MS)) {
@@ -134,9 +136,11 @@ void IRAM_ATTR onSensorEdge()
   if (level) {
     if (risingEdgeTime > 0) {
       period = now - risingEdgeTime;
-      if (fallingEdgeTime > risingEdgeTime) {
+      if (period > 0 && fallingEdgeTime > 0) {
         uint32_t highTime = fallingEdgeTime - risingEdgeTime;
-        rawDutyCycle = (float)highTime / (float)period * 100.0f;
+        if (highTime <= period) {
+          rawDutyCycle = (float)highTime / (float)period * 100.0f;
+        }
       }
       newData = true;
     }
@@ -149,7 +153,13 @@ void IRAM_ATTR onSensorEdge()
 
 bool calculateFrequency()
 {
-  uint32_t capturedPeriod = period;
+  uint32_t capturedPeriod = 0;
+  float capturedDutyCycle = 0.0f;
+  noInterrupts();
+  capturedPeriod = period;
+  capturedDutyCycle = rawDutyCycle;
+  interrupts();
+
   if (capturedPeriod == 0) {
     return false;
   }
@@ -159,7 +169,7 @@ bool calculateFrequency()
     return false;
   }
 
-  dutyCycle = rawDutyCycle;
+  dutyCycle = capturedDutyCycle;
 
   if (frequency == 0) {
     frequency = tempFrequency;
@@ -225,7 +235,7 @@ void initCAN()
 
 void sendZeitronixCANMessage()
 {
-  twai_message_t msg;
+  twai_message_t msg = {};
   float ethanolToSend = ethanol;
   float temperatureToSend = fuelTemperature;
 
@@ -238,8 +248,6 @@ void sendZeitronixCANMessage()
   msg.extd = 0;
   msg.rtr = 0;
   msg.data_length_code = 8;
-
-  memset(msg.data, 0, sizeof(msg.data));
 
   msg.data[0] = (uint8_t)constrain((int)roundf(ethanolToSend), 0, (int)ETHANOL_MAX_CAP);
 

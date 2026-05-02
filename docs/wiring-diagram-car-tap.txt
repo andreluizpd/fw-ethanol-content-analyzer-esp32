@@ -40,17 +40,20 @@ ESP32-C3 SUPER MINI
 +-----------------------------+
 |          USB-C              |
 |       +--------+            |
-|  5V  <===== DC-DC VOUT+    |
-|  GND <===== Common GND     |
-|  3V3 -|        |- GPIO10   |
-|  GP4 -|  C3    |- GPIO9    |
-|  GP5 -|        |- GPIO8    |
-|  GP6 -|        |- GPIO7    |
-|  GP7 -|        |- GPIO6    |
-|  GP0 -|        |- GPIO5    |
-|  GP1 -|        |- GPIO4 <====== Signal tap (orange)
+|  5V  <===== DC-DC VOUT+    |  GPIO5
+|  GND <===== Common GND     |  GPIO6
+|  3V3 -|        |- GPIO7    |
+|  GP4 -|  C3    |- GPIO8    |
+|  GP3 -|        |- GPIO9    |
+|  GP2 -|        |- GPIO10   |
+|  GP1 -|        |- GPIO20   |
+|  GP0 -|        |- GPIO21   |
 |       +--------+            |
 +-----------------------------+
+
+Signal tap goes to left-side GPIO4.
+CAN TX goes from left-side GPIO3 to SN65HVD230 CTX.
+CAN RX goes from left-side GPIO2 to SN65HVD230 CRX.
 
 
 IMPORTANT NOTES

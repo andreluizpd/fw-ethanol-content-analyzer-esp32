@@ -1,36 +1,74 @@
 #pragma once
 
 #include "Arduino.h"
+#include "driver/twai.h"
+#include "esp_task_wdt.h"
 
+// I/O
 #define ECA_INPUT                 4
+#define CAN_TX_PIN                3
+#define CAN_RX_PIN                2
 
+// Signal processing
 #define FREQUENCY_ALPHA           0.01f
-#define TEMPERATURE_ALPHA         0.005f
-
-#define MIN_FREQUENCY             45.f
-#define MAX_FREQUENCY             155.f
+#define MAX_FREQUENCY             200.f
 
 #define E0_FREQUENCY              50.f
 #define E100_FREQUENCY            150.f
 #define ETHANOL_FREQUENCY_SCALER  ((E100_FREQUENCY - E0_FREQUENCY) / 100.0f)
+#define ETHANOL_MAX_CAP           55.0f
 
+// Validation thresholds
+#define FREQ_UNDERRANGE_LIMIT     45.f
+#define FREQ_OVERRANGE_LIMIT      155.f
+#define DUTY_CYCLE_MIN            5.0f
+#define DUTY_CYCLE_MAX            95.0f
+
+// Safe fallback values
+#define SAFE_ETHANOL_DEFAULT      30.0f
+#define SAFE_TEMP_DEFAULT         20.0f
+
+// Startup stabilization
+#define STABLE_PULSES_REQUIRED    3
+
+// Watchdog / timeout
+#define WDT_TIMEOUT_S             5
+#define SENSOR_TIMEOUT_MS         500
+#define SERIAL_READING_INTERVAL_MS 60000
+
+// Temperature
 #define TEMP_MIN                  -40.0f
 #define TEMP_MAX                  125.0f
-#define PULSE_WIDTH_MIN_US        900
-#define PULSE_WIDTH_MAX_US        5100
-#define PULSE_WIDTH_LOW_US        1000
-#define PULSE_WIDTH_HIGH_US       5000
 
-#define SENSOR_TIMEOUT_MS         30000
-#define FALLBACK_ETHANOL          30.0f
-
+// BLE
 #define BLE_DEVICE_NAME           "BimmerWest Flex Kit"
 #define BLE_SERVICE_UUID          "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define BLE_ETHANOL_UUID          "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 #define BLE_TEMPERATURE_UUID      "beb5483f-36e1-4688-b7f5-ea07361b26a8"
 
+// Zeitronix ECA-2 CAN Bus defaults
+#define ZEITRONIX_CAN_ID          0x00EC
+#define ZEITRONIX_CAN_SPEED       TWAI_TIMING_CONFIG_500KBITS()
+#define ZEITRONIX_CAN_INTERVAL_MS 250
+#define ZEITRONIX_SENSOR_OK       0x00
+#define ZEITRONIX_SENSOR_FAULT    0x01
+
+enum SensorState {
+  SENSOR_INITIALIZING,
+  SENSOR_OK,
+  SENSOR_UNDERRANGE,
+  SENSOR_CONTAMINATED,
+  SENSOR_DUTY_INVALID,
+  SENSOR_TIMEOUT
+};
+
 extern float ethanol;
 extern float fuelTemperature;
+extern bool canReady;
+extern uint32_t lastSensorUpdateMs;
+extern uint32_t lastSerialReadingMs;
+extern SensorState sensorState;
+extern uint8_t stablePulseCount;
 
 extern float frequency;
 extern const float frequencyScaler;
@@ -38,17 +76,18 @@ extern const float frequencyScaler;
 extern volatile uint32_t risingEdgeTime;
 extern volatile uint32_t fallingEdgeTime;
 extern volatile uint32_t period;
-extern volatile uint32_t pulseWidthUs;
+extern volatile float rawDutyCycle;
 extern volatile bool newData;
 
-extern volatile uint32_t lastValidReadingMs;
-extern bool sensorTimedOut;
-
 bool calculateFrequency();
+SensorState validateSignal(float freq, float duty);
 void frequencyToEthanolContent(float measuredFrequency, float scaler);
-void pulseWidthToFuelTemperature(uint32_t pulseWidthUs);
-void checkSensorTimeout();
+void dutyCycleToFuelTemperature(float dutyCycle);
+
+void onSensorEdge();
+
+void initCAN();
+void sendZeitronixCANMessage();
+void printSensorReading();
 void setupBLE();
 void updateBLE();
-
-void IRAM_ATTR onSensorEdge();

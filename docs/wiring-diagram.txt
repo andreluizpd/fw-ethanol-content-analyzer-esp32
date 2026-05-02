@@ -26,18 +26,84 @@ ESP32-C3 SUPER MINI
 +-----------------------------+
 |          USB-C              |
 |       +--------+            |
-|  5V  -|        |- GND <---------- Common ground with sensor/vehicle
-|  GND -|        |- 3V3 <---------- Pull-up resistor to signal
-|  3V3 -|        |- GPIO10   |
-|  GP4 -|  C3    |- GPIO9    |
-|  GP5 -|        |- GPIO8    |
-|  GP6 -|        |- GPIO7    |
-|  GP7 -|        |- GPIO6    |
-|  GP0 -|        |- GPIO5    |
-|  GP1 -|        |- GPIO4 <-----+-- Sensor signal (orange)
-|       +--------+            |  |
-+-----------------------------+  |
-                                 +-- Pull-up to 3V3 (2.2kΩ to 3.3kΩ)
+|  5V  -|        |- GPIO5      |
+|  GND -|        |- GPIO6      |
+|  3V3 -|        |- GPIO7      |
+|  GP4 -|  C3    |- GPIO8      |
+|  GP3 -|        |- GPIO9      |
+|  GP2 -|        |- GPIO10     |
+|  GP1 -|        |- GPIO20     |
+|  GP0 -|        |- GPIO21     |
+|       +--------+            |
++-----------------------------+
+
+Left-side connections used here:
+  3V3   <--- Pull-up resistor to sensor signal
+  GND   <--- Common ground with sensor/vehicle
+  GPIO4 <--- Sensor signal (orange)
+  GPIO3 ----> CAN TX (to SN65HVD230 D)
+  GPIO2 <---- CAN RX (from SN65HVD230 R)
+
+
+CAN BUS - SN65HVD230 MODULE
+===========================
+
+ESP32-C3                SN65HVD230 Module              CAN Bus
+--------                -----------------              -------
+3V3 ------------------> 3V3
+GND ------------------> GND
+GPIO3 (TX) -----------> CTX
+GPIO2 (RX) <----------- CRX
+                        CANH -----------------> CAN Bus High  ---+
+                        CANL -----------------> CAN Bus Low   ---+
+                                               (to ECU / dash / logger)
+
++-------------------+
+| SN65HVD230 Module |
+|                   |
+|  3V3  <--------------- ESP32 3V3
+|  GND  <--------------- ESP32 GND
+|  CTX  <--------------- ESP32 GPIO3
+|  CRX  ---------------> ESP32 GPIO2
+|  CANH ----------------> CAN Bus High
+|  CANL ----------------> CAN Bus Low
+|                   |
++-------------------+
+
+Note: This module includes a 120Ω termination resistor (R2).
+If your CAN bus already has termination at both ends, you may
+need to remove R2 from the module.
+On the common blue SN65HVD230 breakout used here, R2 is often marked "121".
+
+
+VEHICLE CAN BUS TAP POINT - BMW G30 540i (B58)
+==============================================
+
+Tap location: BDC (Body Domain Controller) - behind glove box
+Connector:    A258*8B (extended equipment version)
+
++---------------------------------------------+
+| A258*8B Connector                            |
+|                                              |
+|  Pin 47  -->  PT_CAN_L   0.35  GE/SW         |
+|               (yellow/black)                 |
+|                                              |
+|  Pin 48  -->  PT_CAN_H   0.35  GE/WS         |
+|               (yellow/white)                 |
++---------------------------------------------+
+
+Wiring:
+  A258*8B Pin 48 (PT_CAN_H, yellow/white) ---twisted pair---> SN65HVD230 CANH
+  A258*8B Pin 47 (PT_CAN_L, yellow/black) ---twisted pair---> SN65HVD230 CANL
+
+Cable: Unshielded twisted pair, 22 AWG (0.35mm²), ~4-5 meters
+       (CAT5e ethernet cable works - use one twisted pair)
+
+Routing: BDC (behind glove box) -> under carpet along center
+         tunnel -> under rear seat -> trunk area
+
+Note: Basic version uses pins 19 (PT_CAN_L) and 20 (PT_CAN_H)
+on the same connector. Verify your variant before tapping.
 
 
 POWER SUPPLY
@@ -56,24 +122,36 @@ COMPLETE PARTS LIST
 ===================
 1x ESP32-C3 Super Mini
 1x Continental Flex Fuel Sensor (GM 13577429 or similar)
+1x SN65HVD230 CAN transceiver module (3.3V)
 1x 2.2kΩ or 3.3kΩ resistor (signal pull-up)
 1x USB-C cable (for serial monitor + power)
 Optional: 5V voltage regulator if not using USB power
+Optional: 120Ω resistor (CAN termination, if not on module)
 
 
 PIN SUMMARY
 ===========
 ESP32-C3 GPIO4  <-- Sensor signal (orange, via pull-up to 3V3)
-ESP32-C3 3V3    --> Pull-up resistor for sensor signal
-ESP32-C3 GND    --- Common ground with sensor and vehicle
+ESP32-C3 GPIO3  --> CAN TX (to SN65HVD230 D pin)
+ESP32-C3 GPIO2  <-- CAN RX (from SN65HVD230 R pin)
+ESP32-C3 3V3    --> Pull-up resistor and SN65HVD230 VCC
+ESP32-C3 GND    --- Common ground (sensor, CAN transceiver, vehicle)
 ESP32-C3 5V     <-- Power input (USB or 5V regulator)
 
-Sensor yellow   --- Ground
-Sensor orange   --> Signal
-Sensor green    --> 12V
+
+CAN BUS OUTPUT (Zeitronix ECA-2 Compatible)
+===========================================
+CAN ID:       0x00EC (standard 11-bit)
+Speed:        500 Kbps
+Update rate:  250 ms (4 Hz)
+
+Data[0] = Ethanol %       (0-55, capped)
+Data[1] = Fuel Temp       (raw byte - 40 = °C)
+Data[7] = Sensor Status   (0x00 = OK, 0x01 = fault)
 
 
 SERIAL OUTPUT (115200 baud)
 ===========================
 Prints to USB serial:
-  Period (us): 12378  Frequency: 80.8 Hz  Ethanol: 30.8%  Pulse Width: 2496 us  Fuel Temp: 21.7 C
+  Sensor: Stabilized - readings valid
+  Reading: 80.8 Hz, Ethanol 30.8%, Temp 21.7 C, State 1

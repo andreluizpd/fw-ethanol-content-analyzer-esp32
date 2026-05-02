@@ -11,7 +11,6 @@
 
 // Signal processing
 #define FREQUENCY_ALPHA           0.01f
-#define TEMPERATURE_ALPHA         0.005f
 #define MAX_FREQUENCY             200.f
 
 #define E0_FREQUENCY              50.f
@@ -21,10 +20,8 @@
 // Validation thresholds
 #define FREQ_UNDERRANGE_LIMIT     45.f
 #define FREQ_OVERRANGE_LIMIT      155.f
-#define PULSE_WIDTH_MIN_US        900
-#define PULSE_WIDTH_MAX_US        5100
-#define PULSE_WIDTH_LOW_US        1000
-#define PULSE_WIDTH_HIGH_US       5000
+#define DUTY_CYCLE_MIN            5.0f
+#define DUTY_CYCLE_MAX            95.0f
 
 // Safe fallback values
 #define SAFE_ETHANOL_DEFAULT      30.0f
@@ -36,6 +33,7 @@
 // Watchdog / timeout
 #define WDT_TIMEOUT_S             5
 #define SENSOR_TIMEOUT_MS         500
+#define SERIAL_READING_INTERVAL_MS 60000
 
 // Temperature
 #define TEMP_MIN                  -40.0f
@@ -53,7 +51,7 @@ enum SensorState {
   SENSOR_OK,
   SENSOR_UNDERRANGE,
   SENSOR_CONTAMINATED,
-  SENSOR_PULSE_INVALID,
+  SENSOR_DUTY_INVALID,
   SENSOR_TIMEOUT
 };
 
@@ -61,6 +59,7 @@ extern float ethanol;
 extern float fuelTemperature;
 extern bool canReady;
 extern uint32_t lastSensorUpdateMs;
+extern uint32_t lastSerialReadingMs;
 extern SensorState sensorState;
 extern uint8_t stablePulseCount;
 
@@ -70,15 +69,16 @@ extern const float frequencyScaler;
 extern volatile uint32_t risingEdgeTime;
 extern volatile uint32_t fallingEdgeTime;
 extern volatile uint32_t period;
-extern volatile uint32_t pulseWidthUs;
+extern volatile float rawDutyCycle;
 extern volatile bool newData;
 
 bool calculateFrequency();
-SensorState validateSignal(float freq, uint32_t pulseWidth);
+SensorState validateSignal(float freq, float duty);
 void frequencyToEthanolContent(float measuredFrequency, float scaler);
-void pulseWidthToFuelTemperature(uint32_t pulseWidthUs);
+void dutyCycleToFuelTemperature(float dutyCycle);
 
 void onSensorEdge();
 
 void initCAN();
 void sendZeitronixCANMessage();
+void printSensorReading();

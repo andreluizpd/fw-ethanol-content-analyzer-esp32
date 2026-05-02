@@ -25,6 +25,7 @@ Based on the [original project](https://github.com/outlandnish/fw-ethanol-conten
 **CAN bus** — requires an external 3.3V CAN transceiver (e.g. SN65HVD230):
 
 - Connect **GPIO5** (TX) and **GPIO6** (RX) to the transceiver
+- If your SN65HVD230 breakout includes an onboard `120Ω` terminator, remove or disable it when tapping into an already-terminated vehicle CAN bus. On common blue boards this is often **R2** marked `121`.
 
 **Power**: USB-C (easiest) or 5V regulator from vehicle 12V
 

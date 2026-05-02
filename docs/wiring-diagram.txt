@@ -67,6 +67,7 @@ GPIO6 (RX) <----------- CRX
 Note: This module includes a 120Ω termination resistor (R2).
 If your CAN bus already has termination at both ends, you may
 need to remove R2 from the module.
+On the common blue SN65HVD230 breakout used here, R2 is often marked "121".
 
 
 VEHICLE CAN BUS TAP POINT - BMW G30 540i (B58)

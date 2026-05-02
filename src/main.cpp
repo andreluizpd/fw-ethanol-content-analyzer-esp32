@@ -46,10 +46,10 @@ void setup()
     .trigger_panic = true,
   };
   esp_err_t wdtInitResult = esp_task_wdt_init(&wdtConfig);
-  if (wdtInitResult == ESP_OK) {
+  if (wdtInitResult == ESP_OK || wdtInitResult == ESP_ERR_INVALID_STATE) {
     esp_task_wdt_add(NULL);
-  } else if (wdtInitResult == ESP_ERR_INVALID_STATE) {
-    esp_task_wdt_add(NULL);
+  } else {
+    Serial.printf("WDT: init failed (0x%X) - watchdog disabled\n", wdtInitResult);
   }
 
   Serial.println("Ethanol Content Analyzer - ESP32-C3");
@@ -75,7 +75,7 @@ void loop()
   if (newData) {
     newData = false;
     if (calculateFrequency()) {
-      lastSensorUpdateMs = millis();
+      lastSensorUpdateMs = now;
 
       SensorState validation = validateSignal(frequency, dutyCycle);
 
@@ -165,7 +165,7 @@ bool calculateFrequency()
   }
 
   float tempFrequency = 1000000.f / (float)capturedPeriod;
-  if (tempFrequency < 0 || tempFrequency > MAX_FREQUENCY) {
+  if (tempFrequency > MAX_FREQUENCY) {
     return false;
   }
 
@@ -203,9 +203,9 @@ void frequencyToEthanolContent(float measuredFrequency, float scaler)
   ethanol = max(0.0f, min(ETHANOL_MAX_CAP, ethanol));
 }
 
-void dutyCycleToFuelTemperature(float dutyCycle)
+void dutyCycleToFuelTemperature(float dc)
 {
-  float clampedDuty = max(10.0f, min(90.0f, dutyCycle));
+  float clampedDuty = max(10.0f, min(90.0f, dc));
   fuelTemperature = TEMP_MIN + (clampedDuty - 10.0f) * (TEMP_MAX - TEMP_MIN) / 80.0f;
 }
 
@@ -249,7 +249,7 @@ void sendZeitronixCANMessage()
   msg.rtr = 0;
   msg.data_length_code = 8;
 
-  msg.data[0] = (uint8_t)constrain((int)roundf(ethanolToSend), 0, (int)ETHANOL_MAX_CAP);
+  msg.data[0] = (uint8_t)roundf(ethanolToSend);
 
   int tempRaw = (int)roundf(temperatureToSend) + 40;
   msg.data[1] = (uint8_t)constrain(tempRaw, 0, 255);

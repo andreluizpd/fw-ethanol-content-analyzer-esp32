@@ -82,7 +82,7 @@ extern volatile bool newData;
 bool calculateFrequency();
 SensorState validateSignal(float freq, float duty);
 void frequencyToEthanolContent(float measuredFrequency, float scaler);
-void dutyCycleToFuelTemperature(float dutyCycle);
+void dutyCycleToFuelTemperature(float dc);
 
 void onSensorEdge();
 
